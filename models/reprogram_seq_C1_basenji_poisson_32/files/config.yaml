@@ -1,0 +1,55 @@
+alpha:
+  value: false
+batch_size:
+  value: 64
+bin_size:
+  value: 32
+crop:
+  value: true
+data_dir:
+  value: ../preprocessing/data/full_tfr_datasets/i_3072_w_1
+es_criterion:
+  value: min
+es_metric:
+  value: loss
+es_patience:
+  value: 6
+es_start_epoch:
+  value: 1
+input_size:
+  value: 2048
+l_rate:
+  value: 0.001
+log_wandb:
+  value: false
+loss_fn:
+  value: poisson
+loss_params:
+  value: []
+lr_criterion:
+  value: min
+lr_decay:
+  value: 0.3
+lr_metric:
+  value: loss
+lr_patience:
+  value: 10
+metrics:
+  value:
+  - mse
+  - pearsonr
+  - poisson
+model_fn:
+  value: basenji_v2
+num_epochs:
+  value: 20
+record_test:
+  value: false
+rev_comp:
+  value: true
+shuffle:
+  value: true
+sigma:
+  value: 20
+verbose:
+  value: true
