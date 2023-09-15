@@ -8,22 +8,21 @@ from scipy.stats import pearsonr
 from tqdm import tqdm
 import pyfaidx
 
-def multinomial_nll(true_counts, logits):
-  """Compute the multinomial negative log-likelihood
-  Args:
-   true_counts: observed count values
-   logits: predicted logit values
-  """
-  counts_per_example = tf.reduce_sum(true_counts, axis=-1)
-  dist = tfp.distributions.Multinomial(total_count=counts_per_example,
-                     logits=logits)
-  return (-tf.reduce_sum(dist.log_prob(true_counts)) /
-      tf.cast(tf.shape(true_counts)[0], dtype=tf.float32))
 
 
+class GELU(tf.keras.layers.Layer):
+    def __init__(self, name=None, **kwargs):
+        super(GELU, self).__init__(**kwargs)
 
-def load_cbp(model_path):
-    return tf.keras.models.load_model(model_path, custom_objects={"multinomial_nll": multinomial_nll})
+    def call(self, x):
+        # return tf.keras.activations.sigmoid(1.702 * x) * x
+        return tf.keras.activations.sigmoid(tf.constant(1.702) * x) * x
+
+
+def load_model(model_path):
+    return tf.keras.models.load_model(model_path, 
+                                   custom_objects={"GELU": GELU}
+                                  )
 
 class FastaStringExtractor:
     
@@ -38,7 +37,7 @@ class FastaStringExtractor:
                                     max(interval.start, 0),
                                     min(interval.end, chromosome_length),
                                     )
-        # pyfaidx wants a 1-based interval
+        # pyfaidx wants a 1-based interval which should be the same as those from R
         sequence = str(self.fasta.get_seq(trimmed_interval.chrom,
                                           trimmed_interval.start + 1,
                                           trimmed_interval.stop).seq).upper()
@@ -58,14 +57,16 @@ def one_hot_encode(sequence):
 def get_seq(chrom, start, end, final_length=None, perturb='None'):
     fasta_extractor = FastaStringExtractor()
     motif_length = end - start
-    center = final_length // 2
+    
     if final_length:
         exp_motif_range = kipoiseq.Interval(chrom, start, end).resize(final_length)
     else:
         exp_motif_range = kipoiseq.Interval(chrom, start, end)
+        final_length = motif_length
     wt_seq = fasta_extractor.extract(exp_motif_range)
     wt_onehot = one_hot_encode(wt_seq)
     if perturb!='None':
+        center = final_length // 2
         assert type(perturb) == int or type(perturb) == float, 'Bad perturbation'
         test_seqs = wt_onehot.copy()
         test_seqs[center-motif_length//2: center+motif_length//2, :] = perturb
@@ -84,30 +85,26 @@ def normalize_pred(model, seq, scale_preds=True):
     else:
         return np.squeeze(softmax(profile)), np.squeeze(count)
 
-def get_scores_bpnet(model, df, perturb=0.25):
+
+def get_preds(model, df):
+    preds = []
+    for i, row in tqdm(df.iterrows()):
+        wt = get_seq(row['seqnames'], row['start'], row['end'], 
+                     final_length=2048)
+        wt_pred = model.predict(wt[np.newaxis])
+        preds.append(np.mean(wt_pred))
+    return preds
+
+def get_scores(model, df, perturb=0.25, normalize_by_wt=True):
     scores = []
     for i, row in tqdm(df.iterrows()):
         wt, mut = get_seq(row['seqnames'], row['start'], row['end'], 
-                     final_length=2114, perturb=perturb)
-        _, wt_pred = normalize_pred(model, wt, False)
-        _, mut_pred = normalize_pred(model, mut, False)
-        scores.append(((wt_pred-mut_pred)/wt_pred).flatten()[0])
+                     final_length=2048, perturb=perturb)
+        wt_pred = model.predict(wt[np.newaxis])
+        mut_pred = model.predict(mut[np.newaxis])
+        delta = wt_pred-mut_pred
+        if normalize_by_wt:
+            scores.append(((delta)/wt_pred).mean())
+        else:
+            scores.append((delta).mean())
     return scores
-
-# def get_scores_bpnet(model, df, perturb=0.25):
-#     scores_count = []
-#     scores_scaled_profile_pcc = []
-#     scores_scaled_profile_jsd = []
-
-#     for i, row in tqdm(df.iterrows()):
-#         wt, mut = get_seq(row['seqnames'], row['start'], row['end'], 
-#                      final_length=2114, perturb=perturb)
-#         wt_profile, wt_pred = normalize_pred(model, wt, False)
-#         mut_profile, mut_pred = normalize_pred(model, mut, False)
-#         scores_count.append(((wt_pred-mut_pred)/wt_pred).flatten()[0])
-        
-#         scaled_wt, scaled_mut = wt_profile*wt_pred, mut_profile*mut_pred
-        
-#         scores_scaled_profile_pcc.append(pearsonr(scaled_wt, scaled_mut)[0])
-#         scores_scaled_profile_jsd.append(jensenshannon(scaled_wt, scaled_mut)*np.sign(mut_pred - wt_pred))
-#     return scores_count, scores_scaled_profile_pcc, scores_scaled_profile_jsd
