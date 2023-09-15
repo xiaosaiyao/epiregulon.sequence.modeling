@@ -13,7 +13,8 @@ library(rstudioapi)
 #### ARGUMENTS
 quantile_probability_thresholds = c(0.005, 0.05, 0.5, 0.75, 0.95)
 model_name = "basenji"
-
+plot_dir = glue("{base_dir}/ROC_plots")
+dir.create(plot_dir)
 
 base_dir = dirname(rstudioapi::getActiveDocumentContext()$path)
 source(glue('{base_dir}/utils.R'))
@@ -165,9 +166,8 @@ for (cluster_by in c('Clusters', 'hash_assignment')){
     dfs_shuffled_all = shuffle_weights(regulons$ChIP, tf, pos_cluster, cluster_by)
     
 
-    plot_dir = glue("{base_dir}/plots")
-    dir.create(plot_dir)
-    pdf(glue("{plot_dir}/{model_name}_ROC_plots_{tf}_{cluster_by}.pdf"))
+
+    pdf(glue("{plot_dir}/reprogram_seq_ROC_plots_{tf}_{cluster_by}.pdf"))
     
     # plot 
     
@@ -197,10 +197,6 @@ for (cluster_by in c('Clusters', 'hash_assignment')){
   }}
 
 
-
-
-cluster_by
-tf
 
 
 
