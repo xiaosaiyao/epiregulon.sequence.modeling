@@ -1,4 +1,4 @@
-# TF_RE_mapping
+# Sequence based deep neural network models
 
 Steps for reproducing the ROC curves:
 
