@@ -2,13 +2,13 @@
 calculate_ROC <- function(regulon, tf, positive_group_label, GeneExpressionMatrix,
                           label_column = "Clusters", negative_group_label= NULL,
                           plot_results = FALSE, control=FALSE,
-                          exp_assay = "logcounts"){
+                          exp_assay = "normalizedCounts"){
     # regulon <- regulon[regulon$tf == tf,]
     if (control){
       print('replacing weights with 1')
       regulon$weight = 1
     }
-    activity.scores <- calculateActivity(regulon = regulon, 
+    activity.scores <- calculateActivity(regulon = regulon,
                                          expMatrix = GeneExpressionMatrix,
                                          exp_assay = exp_assay)
     activity.scores <- activity.scores[,colnames(GeneExpressionMatrix)]
@@ -76,11 +76,11 @@ randomizeWeights <- function(regulon, tf, positive_group_label,
     res
 }
 
-shuffle_weights = function(regulon, tf, pos_cluster, 
+shuffle_weights = function(regulon, tf, pos_cluster,
                            cluster_by, n_shuffles = 10){
   regulon_shuffled = regulon
   dfs_shuffled = list()
-  
+
   for(i in seq_len(n_shuffles)){
     message(sprintf("Randomization %d out of %d\n",i, n_shuffles))
     regulon_shuffled[['weight']] <- sample(regulon_shuffled[['weight']])
@@ -88,20 +88,20 @@ shuffle_weights = function(regulon, tf, pos_cluster,
                          label_column = cluster_by, negative_group_label= NULL,
                          plot_results = FALSE)
     n_rows = length(res$accuracy$FPR)
-    dfs_shuffled[[i]] <- data.frame('FPR'=res$accuracy$FPR, 
+    dfs_shuffled[[i]] <- data.frame('FPR'=res$accuracy$FPR,
                                     'TPR'=res$accuracy$TPR,
                                     'set'=rep(i, n_rows),
                                     'alpha' = rep(0.6, n_rows))
   }
-  
+
   chip_res = calculate_ROC(regulon, tf, pos_cluster, GeneExpressionMatrix,
                            label_column = cluster_by, negative_group_label= NULL,
                            plot_results = FALSE)
-  dfs_shuffled[['original']] <- data.frame('FPR'=chip_res$accuracy$FPR, 
+  dfs_shuffled[['original']] <- data.frame('FPR'=chip_res$accuracy$FPR,
                                            'TPR'=chip_res$accuracy$TPR,
                                            'set'=rep(0, n_rows),
                                            'alpha' = rep(1, n_rows))
-  
+
   dfs_shuffled_all = bind_rows(dfs_shuffled)
   return(dfs_shuffled_all)
 }
