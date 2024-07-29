@@ -30,33 +30,37 @@ calculate_ROC <- function(regulon, tf, positive_group_label, GeneExpressionMatri
 }
 
 #' @export
-calculate_accuracy_metrics <- function(values, positive_elements_ind, negative_elements_ind, n_steps = 1e3){
-    values <- as.vector(values)
+calculate_accuracy_metrics <- function(values, positive_elements_ind, negative_elements_ind){
+    if (length(intersect(positive_elements_ind, negative_elements_ind))>0) stop("Positive and negative elements overlap")
+    labels <- rep(FALSE, length(values))
+    labels[positive_elements_ind] <- TRUE
     values <- values[unique(c(positive_elements_ind, negative_elements_ind))]
-    positive_elements_ind <- which(unique(c(positive_elements_ind, negative_elements_ind)) %in% positive_elements_ind)
-    max_val <- max(values)
-    min_val <- min(values)
-    max_val <- max_val+(max_val-min_val)/n_steps #add to account for ">=" used for threshold
-    steps <- seq(min_val, max_val, length.out = n_steps)
-    is_positive <- rep(FALSE, length(values))
-    is_positive[positive_elements_ind] <- TRUE
+    labels <- labels[unique(c(positive_elements_ind, negative_elements_ind))]
+    labels <- labels[order(values)]
+    values <- sort(values)
     res_list <- list()
-    all_combinations <- data.frame(threshold_reached=as.logical(c(1,1,0,0)), category = as.logical(c(1,0,1,0)))
-    for(i in seq_along(steps)){
-        threshold_reached <- values >= steps[i]
-        confusion_matrix <- data.frame(threshold_reached =threshold_reached, category = is_positive)
-        confusion_matrix <- rbind(all_combinations, confusion_matrix)
-        tab <- table(confusion_matrix)
-        # account for adding one observation for combination
-        tab <- tab - 1
-        res_list[[i]] <- c(TP = tab[2,2], FP = tab[2, 1], TN = tab[1, 1],
-                           FN = tab[1, 2], cutoff = steps[i])
+    TP = sum(labels)
+    FP = sum(!labels)
+    TN = 0
+    FN = 0
+    for(i in seq_along(labels)){
+        res_list[[i]] <- c(TP = TP, FP = FP, TN = TN,
+                           FN = FN, cutoff = values[i])
+        if(labels[i]) {
+            TP <- TP - 1
+            FN <- FN + 1
+        }
+        else{
+            FP <- FP - 1
+            TN <- TN + 1
+        }
     }
     res <- as.data.frame(do.call(rbind, res_list))
     TPR <- res$TP/(res$TP + res$FN)
     FPR <- res$FP/(res$FP + res$TN)
     list(TPR = TPR, FPR = FPR, cutoff = res$cutoff, confusion_matrix_data = res)
 }
+
 
 randomizeWeights <- function(regulon, tf, positive_group_label,
                               n=100, weight_column = "weight",

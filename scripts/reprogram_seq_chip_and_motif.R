@@ -30,7 +30,7 @@ evaluateRegulon <- function(grl, p2g, PeakMatrix, GeneExpressionMatrix, tf,
   # TF RE overlap and regulon construction
   overlap <- addTFMotifInfo(grl = grl, p2g = p2g, peakMatrix = PeakMatrix)
   regulon <- getRegulon(p2g = p2g, overlap = overlap, aggregate = FALSE)
-  pruned.regulon <- pruneRegulon(expMatrix = GeneExpressionMatrix,
+  regulon <- pruneRegulon(expMatrix = GeneExpressionMatrix,
                                  exp_assay = "normalizedCounts",
                                  peakMatrix = PeakMatrix,
                                  peak_assay = "counts",
@@ -41,7 +41,7 @@ evaluateRegulon <- function(grl, p2g, PeakMatrix, GeneExpressionMatrix, tf,
                                  regulon_cutoff = 0.05
   )
   if (add_weights){ # add weights
-    regulon <- addWeights(regulon = pruned.regulon,
+    regulon <- addWeights(regulon = regulon,
                           expMatrix  = GeneExpressionMatrix,
                           exp_assay  = "normalizedCounts",
                           peakMatrix = PeakMatrix,
@@ -54,9 +54,10 @@ evaluateRegulon <- function(grl, p2g, PeakMatrix, GeneExpressionMatrix, tf,
     print('SETTING WEIGHTS TO 1')
     regulon$weight <- 1
   }
+  saveRDS(regulon, "evaluateRegulon.rds")
   # regulon
   result <- calculate_ROC(regulon, tf, positive_class, GeneExpressionMatrix,
-                          label_column=label_column)
+                          label_column=label_column, negative_group_label="HTO5_NeonG_v2")
 
   return(list("regulon" = regulon, "roc" = result))
 }
@@ -67,148 +68,152 @@ PeakMatrix <- mae[["PeakMatrix"]]
 # expression matrix
 GeneExpressionMatrix <- mae[["GeneExpressionMatrix"]]
 rownames(GeneExpressionMatrix) <- rowData(GeneExpressionMatrix)$name
-assay(GeneExpressionMatrix) <- as(log2(assay(GeneExpressionMatrix)+1), "CsparseMatrix")
-reducedDimMatrix <- reducedDim(mae[['TileMatrix500']], "LSI_ATAC")
-reducedDim(GeneExpressionMatrix, "UMAP_Combined") <- reducedDim(mae[['TileMatrix500']], "UMAP_Combined")
 
-set.seed(1010)
+reducedDimMatrix <- reducedDim(mae[['TileMatrix500']], "LSI_ATAC")
+
+set.seed(1010, kind ="Mersenne-Twister")
 p2g <- calculateP2G(peakMatrix = PeakMatrix,
                     expMatrix = GeneExpressionMatrix,
                     reducedDim = reducedDimMatrix,
                     exp_assay = "normalizedCounts")
+
 # set tf of interest
 
 for (cluster_by in c('hash_assignment','Clusters')){
 
-  for (tf in c('GATA6', 'NKX2-1')){
-    # set motif name and positive cluster name
-    if (tf=='NKX2-1'){
-      if (cluster_by == 'Clusters'){
-        pos_cluster <- 'C3'
-      } else if (cluster_by == 'hash_assignment'){
-        pos_cluster = 'HTO8_NKX2.1_UTR'
+    for (tf in c('GATA6', 'NKX2-1')){
+        # set motif name and positive cluster name
+        if (tf=='NKX2-1'){
+            if (cluster_by == 'Clusters'){
+                pos_cluster <- 'C3'
+            } else if (cluster_by == 'hash_assignment'){
+                pos_cluster = 'HTO8_NKX2.1_UTR'
 
-      }
+            }
 
-      motif_name <-  'Nkx2.1.Homeobox_182'
-      motif_name <-  'NKX21_476'
-    } else if (tf=='GATA6'){
-      if (cluster_by == 'Clusters'){
-        pos_cluster <- 'C1'
-      } else if (cluster_by == 'hash_assignment'){
-        pos_cluster = 'GATA6'
-      }
-      #motif_name <-  'Gata6.Zf_109'
-      motif_name <-  'GATA6_387'
-      }
-
-
-    # get ChIP-seq data
-    grl_chip <- getTFMotifInfo(genome = "hg38")[tf] # public ChIP
-    # get motif positions
-    motif_positions<- motif_positions_all[[motif_name]]
-
-    # find ChIP ranges overlapping with a motif
-    #o <- findOverlaps(grl_chip[[tf]], motif_positions)
-    #grl_chip_in_motifs <- grl_chip[[tf]][unique(queryHits(o)),]
-
-    #load DNN model scores
-    #dataset_all <- read.csv(glue("{base_dir}/scores/{model_name}_{motif_name}.csv"))
+            motif_name <-  'Nkx2.1.Homeobox_182'
+            motif_name <-  'NKX21_476'
+        } else if (tf=='GATA6'){
+            if (cluster_by == 'Clusters'){
+                pos_cluster <- 'C1'
+            } else if (cluster_by == 'hash_assignment'){
+                pos_cluster = 'GATA6'
+            }
+            #motif_name <-  'Gata6.Zf_109'
+            motif_name <-  'GATA6_387'
+        }
 
 
-    # assemble ChIP, motif and ChIP in motif granges
-    gr_set = list(
-                  motif=motif_positions,
-                  chip_in_motifs=grl_chip_in_motifs
-                  )
-    grls <- list('ChIP'=grl_chip)
-    for (l in names(gr_set)){
-      g= GRangesList()
-      g[[tf]] = gr_set[[l]]
-      grls[[l]] = g
+        # get ChIP-seq data
+        grl_chip <- getTFMotifInfo(genome = "hg38")[tf] # public ChIP
+        # get motif positions
+        motif_positions<- motif_positions_all[[motif_name]]
+
+        # find ChIP ranges overlapping with a motif
+        #o <- findOverlaps(grl_chip[[tf]], motif_positions)
+        #grl_chip_in_motifs <- grl_chip[[tf]][unique(queryHits(o)),]
+
+        #load DNN model scores
+        #dataset_all <- read.csv(glue("{base_dir}/scores/{model_name}_{motif_name}.csv"))
+
+
+        # assemble ChIP, motif and ChIP in motif granges
+        gr_set = list(
+            motif=motif_positions,
+            chip_in_motifs=grl_chip_in_motifs
+        )
+        grls <- list('ChIP'=grl_chip)
+        for (l in names(gr_set)){
+            g= GRangesList()
+            g[[tf]] = gr_set[[l]]
+            grls[[l]] = g
+        }
+        # assemble DNN thresholding based grl-s
+        thresholds = quantile(dataset_all$count, probs=quantile_probability_thresholds)
+        for (t_i in thresholds){
+            dataset = dataset_all[dataset_all$count>t_i,]
+            print(length(dataset$seqnames))
+            cbp_filtered <- GRanges(seqnames = Rle(dataset$seqnames),
+                                    ranges = IRanges(dataset$start, dataset$end),
+                                    strand = Rle("*"))
+            g= GRangesList()
+            g[[tf]] = cbp_filtered
+            grls[[glue('{model_name} {signif(t_i, 3)}')]] = g
+        }
+
+
+        dfs_weighted = list() # to save weighted accuracy results
+        dfs_1 = list() # to save results with weights set to 1
+        regulons = list() # to save the regulons
+
+        for (n in names(grls)){
+            print(n)
+            # results with weights
+
+            results_w_weight <- evaluateRegulon(grl=grls[[n]], p2g=p2g, PeakMatrix=PeakMatrix,
+                                                GeneExpressionMatrix = GeneExpressionMatrix, tf=tf,
+                                                positive_class=pos_cluster,
+                                                add_weights =TRUE, label=n, label_column=cluster_by)
+
+            # ROC values for weighted regulon
+            roc_w = signif(calculate_AUC(results_w_weight$roc$accuracy$FPR, results_w_weight$roc$accuracy$TPR), 3)
+            # results with weights set to 1
+            results_no_weight <- evaluateRegulon(grl=grls[[n]], p2g, PeakMatrix,
+                                                 GeneExpressionMatrix, tf, pos_cluster,
+                                                 FALSE, n, label_column=cluster_by)
+            # ROC values for regulon with weights set to 1
+            roc_no = signif(calculate_AUC(results_no_weight$roc$accuracy$FPR, results_no_weight$roc$accuracy$TPR), 3)
+
+            regulons[[n]] = results_w_weight$regulon # keep the regulon to plot Venn diagrams
+            n_rows = length(results_w_weight$roc$accuracy$FPR)
+            n_TG = length(unique(results_w_weight$regulon$target))
+            # save weighted regulon
+            dfs_weighted[[glue('w{n}')]] <- data.frame('FPR'=results_w_weight$roc$accuracy$FPR,
+                                                       'TPR'=results_w_weight$roc$accuracy$TPR,
+                                                       'set'=rep(glue('w{n} {roc_w}'), n_rows))
+            # save regulon with weights = 1
+            dfs_1[[glue('{n}')]] <- data.frame('FPR'=results_no_weight$roc$accuracy$FPR,
+                                               'TPR'=results_no_weight$roc$accuracy$TPR,
+                                               'set'=rep(glue('{n} {roc_no}'), n_rows))
+        }
+        # combine results
+        dfs_weighted = bind_rows(dfs_weighted)
+        dfs_1 = bind_rows(dfs_1)
+
+
+        dfs_shuffled_all = shuffle_weights(regulons$ChIP, tf, pos_cluster, cluster_by)
+
+
+
+        pdf(glue("{plot_dir}/reprogram_seq_ROC_plots_{tf}_{cluster_by}.pdf"))
+
+        # plot
+
+        p_weighted=ggplot(data = dfs_weighted, aes(x = FPR, y = TPR, color=set)) + geom_line() +
+            ggtitle(tf) + theme(legend.position = c(0.75,0.55)) + theme_classic()
+        p_1=ggplot(data = dfs_1, aes(x = FPR, y = TPR, color=set)) + geom_line() +
+            ggtitle(tf) + theme(legend.position = c(0.75,0.55)) + theme_classic()
+        print(p_weighted)
+        print(p_1)
+
+        non_cbp = Filter(function(x) !any(grepl(model_name, x)), unique(dfs_weighted$set))
+        dfs_weighted_non_cbp = subset(dfs_weighted, set %in% non_cbp)
+        non_cbp = Filter(function(x) !any(grepl(model_name, x)), unique(dfs_1$set))
+        dfs_1_non_cbp = subset(dfs_1, set %in% non_cbp)
+
+        p_weighted=ggplot(data = dfs_weighted_non_cbp, aes(x = FPR, y = TPR, color=set)) + geom_line() +
+            ggtitle(tf) + theme(legend.position = c(0.75,0.55)) + theme_classic()
+        p_1=ggplot(data = dfs_1_non_cbp, aes(x = FPR, y = TPR, color=set)) + geom_line() +
+            ggtitle(tf) + theme(legend.position = c(0.75,0.55)) + theme_classic()
+        print(p_weighted)
+        print(p_1)
+
+        shuffled_p = ggplot(data = dfs_shuffled_all, aes(x = FPR, y = TPR, group=set, alpha=alpha)) + geom_line(show.legend = FALSE) +
+            ggtitle(glue('{tf} ChIP')) + theme_classic()
+        print(shuffled_p)
+        dev.off()
     }
-    # assemble DNN thresholding based grl-s
-    thresholds = quantile(dataset_all$count, probs=quantile_probability_thresholds)
-    for (t_i in thresholds){
-      dataset = dataset_all[dataset_all$count>t_i,]
-      print(length(dataset$seqnames))
-      cbp_filtered <- GRanges(seqnames = Rle(dataset$seqnames),
-                              ranges = IRanges(dataset$start, dataset$end),
-                              strand = Rle("*"))
-      g= GRangesList()
-      g[[tf]] = cbp_filtered
-      grls[[glue('{model_name} {signif(t_i, 3)}')]] = g
-    }
-
-
-    dfs_weighted = list() # to save weighted accuracy results
-    dfs_1 = list() # to save results with weights set to 1
-    regulons = list() # to save the regulons
-
-    for (n in names(grls)){
-      print(n)
-      # results with weights
-      results_w_weight <- evaluateRegulon(grl=grls[[n]], p2g, PeakMatrix,
-                                          GeneExpressionMatrix, tf, pos_cluster,
-                                             TRUE, n, label_column=cluster_by)
-      # ROC values for weighted regulon
-      roc_w = signif(calculate_AUC(results_w_weight$roc$accuracy$FPR, results_w_weight$roc$accuracy$TPR), 3)
-      # results with weights set to 1
-      results_no_weight <- evaluateRegulon(grl=grls[[n]], p2g, PeakMatrix,
-                                         GeneExpressionMatrix, tf, pos_cluster,
-                                         FALSE, n, label_column=cluster_by)
-      # ROC values for regulon with weights set to 1
-      roc_no = signif(calculate_AUC(results_no_weight$roc$accuracy$FPR, results_no_weight$roc$accuracy$TPR), 3)
-
-      regulons[[n]] = results_w_weight$regulon # keep the regulon to plot Venn diagrams
-      n_rows = length(results_w_weight$roc$accuracy$FPR)
-      n_TG = length(unique(results_w_weight$regulon$target))
-      # save weighted regulon
-      dfs_weighted[[glue('w{n}')]] <- data.frame('FPR'=results_w_weight$roc$accuracy$FPR,
-                                         'TPR'=results_w_weight$roc$accuracy$TPR,
-                                         'set'=rep(glue('w{n} {roc_w}'), n_rows))
-      # save regulon with weights = 1
-      dfs_1[[glue('{n}')]] <- data.frame('FPR'=results_no_weight$roc$accuracy$FPR,
-                                                'TPR'=results_no_weight$roc$accuracy$TPR,
-                                                'set'=rep(glue('{n} {roc_no}'), n_rows))
-    }
-    # combine results
-    dfs_weighted = bind_rows(dfs_weighted)
-    dfs_1 = bind_rows(dfs_1)
-
-
-    dfs_shuffled_all = shuffle_weights(regulons$ChIP, tf, pos_cluster, cluster_by)
-
-
-
-    pdf(glue("{plot_dir}/reprogram_seq_ROC_plots_{tf}_{cluster_by}.pdf"))
-
-    # plot
-
-    p_weighted=ggplot(data = dfs_weighted, aes(x = FPR, y = TPR, color=set)) + geom_line() +
-      ggtitle(tf) + theme(legend.position = c(0.75,0.55)) + theme_classic()
-    p_1=ggplot(data = dfs_1, aes(x = FPR, y = TPR, color=set)) + geom_line() +
-      ggtitle(tf) + theme(legend.position = c(0.75,0.55)) + theme_classic()
-    print(p_weighted)
-    print(p_1)
-
-    non_cbp = Filter(function(x) !any(grepl(model_name, x)), unique(dfs_weighted$set))
-    dfs_weighted_non_cbp = subset(dfs_weighted, set %in% non_cbp)
-    non_cbp = Filter(function(x) !any(grepl(model_name, x)), unique(dfs_1$set))
-    dfs_1_non_cbp = subset(dfs_1, set %in% non_cbp)
-
-    p_weighted=ggplot(data = dfs_weighted_non_cbp, aes(x = FPR, y = TPR, color=set)) + geom_line() +
-      ggtitle(tf) + theme(legend.position = c(0.75,0.55)) + theme_classic()
-    p_1=ggplot(data = dfs_1_non_cbp, aes(x = FPR, y = TPR, color=set)) + geom_line() +
-      ggtitle(tf) + theme(legend.position = c(0.75,0.55)) + theme_classic()
-    print(p_weighted)
-    print(p_1)
-
-    shuffled_p = ggplot(data = dfs_shuffled_all, aes(x = FPR, y = TPR, group=set, alpha=alpha)) + geom_line(show.legend = FALSE) +
-                        ggtitle(glue('{tf} ChIP')) + theme_classic()
-    print(shuffled_p)
-    dev.off()
-  }}
+}
 
 
 
