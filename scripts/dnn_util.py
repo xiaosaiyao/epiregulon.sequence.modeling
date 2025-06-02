@@ -8,7 +8,15 @@ from scipy.stats import pearsonr
 from tqdm import tqdm
 import pyfaidx
 
-
+def get_scores_bpnet(model, df, perturb=0.25):
+    scores = []
+    for i, row in tqdm(df.iterrows()):
+        wt, mut = get_seq(row['seqnames'], row['start'], row['end'], 
+                     final_length=2114, perturb=perturb)
+        _, wt_pred = normalize_pred(model, wt, False)
+        _, mut_pred = normalize_pred(model, mut, False)
+        scores.append(((wt_pred-mut_pred)/wt_pred).flatten()[0])
+    return scores
 
 class GELU(tf.keras.layers.Layer):
     def __init__(self, name=None, **kwargs):
@@ -26,7 +34,7 @@ def load_model(model_path):
 
 class FastaStringExtractor:
     
-    def __init__(self, fasta_file='/gstore/project/lineage/shush/genomes/hg38.fa'):
+    def __init__(self, fasta_file='../hg38.fa'):
         self.fasta = pyfaidx.Fasta(fasta_file)
         self._chromosome_sizes = {k: len(v) for k, v in self.fasta.items()}
 
@@ -95,8 +103,10 @@ def get_preds(model, df):
         preds.append(np.mean(wt_pred))
     return preds
 
-def get_scores(model, df, perturb=0.25, normalize_by_wt=True):
+def get_scores(model, df, perturb=0.25, normalize_by_wt=True, func=np.mean):
     scores = []
+    wts = []
+    muts = []
     for i, row in tqdm(df.iterrows()):
         wt, mut = get_seq(row['seqnames'], row['start'], row['end'], 
                      final_length=2048, perturb=perturb)
@@ -104,7 +114,8 @@ def get_scores(model, df, perturb=0.25, normalize_by_wt=True):
         mut_pred = model.predict(mut[np.newaxis])
         delta = wt_pred-mut_pred
         if normalize_by_wt:
-            scores.append(((delta)/wt_pred).mean())
+            scores.append(func((delta)/wt_pred))
         else:
-            scores.append((delta).mean())
-    return scores
+            wts.append(func(wt_pred))
+            muts.append(func(mut_pred))
+    return wts, muts
